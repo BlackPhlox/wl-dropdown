@@ -612,7 +612,7 @@ fn copy_is_disabled_without_a_selection() {
     let mut st = stage();
     right_click_terminal(&mut st, Mods::NONE);
     click_menu_item(&mut st, MenuItem::Copy);
-    assert!(st.panel.take_effects().is_empty());
+    assert_eq!(st.panel.take_effects(), Vec::<Effect>::new());
     assert!(
         st.panel.menu_open(),
         "a disabled entry leaves the menu open"

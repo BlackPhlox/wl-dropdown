@@ -198,7 +198,7 @@ Blur=true
     #[test]
     fn rejects_out_of_range_channels() {
         let m = parse("[Color2]\nColor=300,0,0\n");
-        assert!(m.is_empty());
+        assert_eq!(m, HashMap::new());
     }
 
     #[test]
