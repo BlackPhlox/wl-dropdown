@@ -415,10 +415,9 @@ impl<'a> Canvas<'a> {
 /// Converts the canvas's premultiplied RGBA to Wayland's ARGB8888, which is
 /// premultiplied BGRA in memory on little-endian machines.
 pub fn rgba_to_argb8888(src: &[u8], dst: &mut [u8]) {
-    for (s, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
-        d[0] = s[2];
-        d[1] = s[1];
-        d[2] = s[0];
-        d[3] = s[3];
+    let (src, _) = src.as_chunks::<4>();
+    let (dst, _) = dst.as_chunks_mut::<4>();
+    for (s, d) in src.iter().zip(dst.iter_mut()) {
+        *d = [s[2], s[1], s[0], s[3]];
     }
 }

@@ -59,7 +59,7 @@ impl Image {
     /// hold it.
     pub fn from_premultiplied_rgba(width: u32, height: u32, data: &[u8]) -> Self {
         let mut rgba = Vec::with_capacity(data.len());
-        for px in data.chunks_exact(4) {
+        for px in data.as_chunks::<4>().0 {
             let a = px[3] as u32;
             let un = |c: u8| {
                 (c as u32 * 255 + a / 2)
@@ -84,7 +84,9 @@ impl Image {
         let rgba = match info.color_type {
             png::ColorType::Rgba => buf,
             png::ColorType::Rgb => buf
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .flat_map(|p| [p[0], p[1], p[2], 255])
                 .collect(),
             other => {
@@ -120,7 +122,7 @@ impl Image {
     /// at as it would appear on a desktop.
     pub fn over(&self, bg: [u8; 3]) -> Self {
         let mut rgba = self.rgba.clone();
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             let a = px[3] as u32;
             for i in 0..3 {
                 px[i] = ((px[i] as u32 * a + bg[i] as u32 * (255 - a) + 127) / 255) as u8;
@@ -153,8 +155,10 @@ pub fn compare(actual: &Image, expected: &Image, tol: Tolerance) -> Option<Compa
     let mut diff = Vec::with_capacity(expected.rgba.len());
     for (a, e) in actual
         .rgba
-        .chunks_exact(4)
-        .zip(expected.rgba.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(expected.rgba.as_chunks::<4>().0)
     {
         let delta = (0..4).map(|i| a[i].abs_diff(e[i])).max().unwrap();
         max_delta = max_delta.max(delta);

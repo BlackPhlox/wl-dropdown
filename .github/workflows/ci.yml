@@ -17,8 +17,11 @@ jobs:
             pkg-config libxkbcommon-dev libwayland-dev \
             sway grim fonts-dejavu-core
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned so a new stable release cannot fail the build with lints
+      # that did not exist when the code was written. Bump deliberately.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
