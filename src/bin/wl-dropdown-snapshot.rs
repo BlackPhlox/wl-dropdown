@@ -49,7 +49,7 @@ fn main() -> ExitCode {
             let mut names = Vec::new();
             while let Some(a) = rest.next() {
                 match a.as_str() {
-                    "--out" => out = PathBuf::from(rest.next().map(String::as_str).unwrap_or(".")),
+                    "--out" => out = PathBuf::from(rest.next().map_or(".", String::as_str)),
                     "--backdrop" => backdrop = rest.next().and_then(|v| parse_hex(v)),
                     name => names.push(name.to_owned()),
                 }
@@ -89,7 +89,7 @@ fn main() -> ExitCode {
                         tol.channel = rest
                             .next()
                             .and_then(|v| v.parse().ok())
-                            .unwrap_or(tol.channel)
+                            .unwrap_or(tol.channel);
                     }
                     _ => return usage(),
                 }

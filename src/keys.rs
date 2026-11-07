@@ -13,7 +13,7 @@ pub enum Key {
     Char(char),
     Enter,
     Tab,
-    /// Shift+Tab as some layouts report it (ISO_Left_Tab).
+    /// Shift+Tab as some layouts report it (`ISO_Left_Tab`).
     Backtab,
     Backspace,
     Escape,
@@ -34,6 +34,7 @@ pub enum Key {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[allow(clippy::struct_excessive_bools, reason = "independent modifier keys")]
 pub struct Mods {
     pub shift: bool,
     pub ctrl: bool,
@@ -71,7 +72,7 @@ impl Mods {
 
     /// libvterm's modifier bits: Shift 1, Alt 2, Ctrl 4.
     pub fn vterm_bits(self) -> u8 {
-        (self.shift as u8) | (self.alt as u8) << 1 | (self.ctrl as u8) << 2
+        u8::from(self.shift) | u8::from(self.alt) << 1 | u8::from(self.ctrl) << 2
     }
 }
 
@@ -331,7 +332,7 @@ pub fn encode_key(key: Key, mods: Mods, modes: KeyModes) -> Option<String> {
         // Shift+Backspace is still Backspace.
         mods.shift = false;
     }
-    let m = mods.vterm_bits() as u32;
+    let m = u32::from(mods.vterm_bits());
     let literal = |c: u8| -> String {
         if mods.shift || mods.ctrl {
             format!("{CSI}{};{}u", c, m + 1)
@@ -394,7 +395,7 @@ pub fn encode_char(c: char, mods: Mods) -> String {
     if c != ' ' {
         mods.shift = false;
     }
-    let m = mods.vterm_bits() as u32;
+    let m = u32::from(mods.vterm_bits());
     if m == 0 {
         return c.to_string();
     }

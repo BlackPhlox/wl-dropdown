@@ -60,9 +60,9 @@ impl Image {
     pub fn from_premultiplied_rgba(width: u32, height: u32, data: &[u8]) -> Self {
         let mut rgba = Vec::with_capacity(data.len());
         for px in data.as_chunks::<4>().0 {
-            let a = px[3] as u32;
+            let a = u32::from(px[3]);
             let un = |c: u8| {
-                (c as u32 * 255 + a / 2)
+                (u32::from(c) * 255 + a / 2)
                     .checked_div(a)
                     .map_or(0, |v| v.min(255) as u8)
             };
@@ -75,6 +75,9 @@ impl Image {
         }
     }
 
+    /// # Errors
+    ///
+    /// When the file cannot be read or is not an RGB(A) PNG.
     pub fn load_png(path: &Path) -> io::Result<Self> {
         let decoder = png::Decoder::new(io::BufReader::new(fs::File::open(path)?));
         let mut reader = decoder.read_info().map_err(io::Error::other)?;
@@ -102,6 +105,9 @@ impl Image {
         })
     }
 
+    /// # Errors
+    ///
+    /// When the file or its directory cannot be written.
     pub fn save_png(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
@@ -120,12 +126,13 @@ impl Image {
 
     /// Composites over a solid colour, so a transparent surface can be looked
     /// at as it would appear on a desktop.
+    #[must_use]
     pub fn over(&self, bg: [u8; 3]) -> Self {
         let mut rgba = self.rgba.clone();
         for px in rgba.as_chunks_mut::<4>().0 {
-            let a = px[3] as u32;
+            let a = u32::from(px[3]);
             for i in 0..3 {
-                px[i] = ((px[i] as u32 * a + bg[i] as u32 * (255 - a) + 127) / 255) as u8;
+                px[i] = ((u32::from(px[i]) * a + u32::from(bg[i]) * (255 - a) + 127) / 255) as u8;
             }
             px[3] = 255;
         }
@@ -160,14 +167,19 @@ pub fn compare(actual: &Image, expected: &Image, tol: Tolerance) -> Option<Compa
         .iter()
         .zip(expected.rgba.as_chunks::<4>().0)
     {
-        let delta = (0..4).map(|i| a[i].abs_diff(e[i])).max().unwrap();
+        let delta = a
+            .iter()
+            .zip(e)
+            .map(|(x, y)| x.abs_diff(*y))
+            .fold(0, u8::max);
         max_delta = max_delta.max(delta);
         if delta > tol.channel {
             differing += 1;
             diff.extend_from_slice(&[255, 0, 0, 255]);
         } else {
-            let grey =
-                ((e[0] as u32 + e[1] as u32 + e[2] as u32) / 3 * e[3] as u32 / 255 / 3) as u8;
+            let grey = ((u32::from(e[0]) + u32::from(e[1]) + u32::from(e[2])) / 3 * u32::from(e[3])
+                / 255
+                / 3) as u8;
             diff.extend_from_slice(&[grey, grey, grey, 255]);
         }
     }
@@ -190,8 +202,10 @@ pub fn snapshot_dir() -> PathBuf {
 /// Where mismatches are written for inspection.
 pub fn output_dir() -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"))
+        .map_or_else(
+            || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"),
+            PathBuf::from,
+        )
         .join("snapshots")
 }
 
@@ -203,6 +217,11 @@ fn update_requested() -> bool {
 ///
 /// Returns a description of the mismatch, or `Ok` if it matches (or was
 /// written because `UPDATE_SNAPSHOTS` is set).
+///
+/// # Errors
+///
+/// A description of the mismatch, with where the actual image and the diff
+/// were written.
 pub fn check(name: &str, image: &Image, tol: Tolerance) -> Result<(), String> {
     let reference = snapshot_dir().join(format!("{name}.png"));
     let out = output_dir();
@@ -213,15 +232,12 @@ pub fn check(name: &str, image: &Image, tol: Tolerance) -> Result<(), String> {
         return Ok(());
     }
     let actual_path = out.join(format!("{name}.actual.png"));
-    let expected = match Image::load_png(&reference) {
-        Ok(img) => img,
-        Err(_) => {
-            let _ = image.save_png(&actual_path);
-            return Err(format!(
-                "no reference for snapshot '{name}'; wrote {} — rerun with UPDATE_SNAPSHOTS=1 to accept it",
-                actual_path.display()
-            ));
-        }
+    let Ok(expected) = Image::load_png(&reference) else {
+        let _ = image.save_png(&actual_path);
+        return Err(format!(
+            "no reference for snapshot '{name}'; wrote {} — rerun with UPDATE_SNAPSHOTS=1 to accept it",
+            actual_path.display()
+        ));
     };
     match compare(image, &expected, tol) {
         None => {

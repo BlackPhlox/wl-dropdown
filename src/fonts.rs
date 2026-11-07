@@ -43,7 +43,7 @@ impl Style {
     };
 
     fn index(self) -> usize {
-        (self.bold as usize) | (self.italic as usize) << 1
+        usize::from(self.bold) | usize::from(self.italic) << 1
     }
 }
 
@@ -68,6 +68,10 @@ impl FontLibrary {
 
     /// A library of just these files — what the screenshot tests use, so
     /// results do not depend on what the machine has installed.
+    ///
+    /// # Errors
+    ///
+    /// When one of the files cannot be read.
     pub fn from_files(paths: &[&Path]) -> std::io::Result<Self> {
         let mut db = fontdb::Database::new();
         for p in paths {
@@ -110,7 +114,7 @@ impl FontLibrary {
         FALLBACK_MONOSPACE
             .iter()
             .find(|f| self.has_family(f))
-            .map(|f| f.to_string())
+            .map(std::string::ToString::to_string)
             .or_else(|| {
                 self.db
                     .faces()
@@ -265,14 +269,14 @@ impl Fonts {
     /// Cell metrics for the regular face at `px_em`.
     pub fn metrics(&self, px_em: f64) -> CellMetrics {
         let font = &self.faces[0].font;
-        let upem = font.units_per_em().unwrap_or(1000.0) as f64;
+        let upem = f64::from(font.units_per_em().unwrap_or(1000.0));
         let k = px_em / upem;
-        let ascent = font.ascent_unscaled() as f64 * k;
-        let descent = -font.descent_unscaled() as f64 * k;
+        let ascent = f64::from(font.ascent_unscaled()) * k;
+        let descent = f64::from(-font.descent_unscaled()) * k;
         let space = font.glyph_id(' ');
-        let mut width = font.h_advance_unscaled(space) as f64 * k;
+        let mut width = f64::from(font.h_advance_unscaled(space)) * k;
         if width <= 0.0 {
-            width = font.h_advance_unscaled(font.glyph_id('M')) as f64 * k;
+            width = f64::from(font.h_advance_unscaled(font.glyph_id('M'))) * k;
         }
         CellMetrics {
             width,
@@ -308,13 +312,12 @@ impl Fonts {
         if c.is_control() || c == ' ' {
             return None;
         }
-        let face = match self.fallback_for.get(&c) {
-            Some(f) => *f,
-            None => {
-                let found = self.find_fallback(c);
-                self.fallback_for.insert(c, found);
-                found
-            }
+        let face = if let Some(f) = self.fallback_for.get(&c) {
+            *f
+        } else {
+            let found = self.find_fallback(c);
+            self.fallback_for.insert(c, found);
+            found
         }?;
         Some((face, self.face(face).font.glyph_id(c)))
     }
@@ -358,8 +361,8 @@ impl Fonts {
         for c in text.chars() {
             if let Some((fi, g)) = self.lookup(c, Style::REGULAR) {
                 let font = &self.face(fi).font;
-                let upem = font.units_per_em().unwrap_or(1000.0) as f64;
-                w += font.h_advance_unscaled(g) as f64 * px_em / upem;
+                let upem = f64::from(font.units_per_em().unwrap_or(1000.0));
+                w += f64::from(font.h_advance_unscaled(g)) * px_em / upem;
             }
         }
         w
@@ -377,7 +380,7 @@ impl Fonts {
         let (face, glyph) = self.lookup(c, style)?;
         let pen = x.floor();
         let subpixel = (((x - pen) as f32) * SUBPIXEL_STEPS).round() as u8;
-        let (pen, subpixel) = if subpixel as f32 >= SUBPIXEL_STEPS {
+        let (pen, subpixel) = if f32::from(subpixel) >= SUBPIXEL_STEPS {
             (pen + 1.0, 0)
         } else {
             (pen, subpixel)
@@ -398,7 +401,7 @@ impl Fonts {
                 face,
                 glyph,
                 px_em,
-                subpixel as f32 / SUBPIXEL_STEPS,
+                f32::from(subpixel) / SUBPIXEL_STEPS,
                 fake_bold,
             )
             .map(Arc::new);
@@ -423,7 +426,7 @@ impl Fonts {
         if w == 0 || h == 0 {
             return None;
         }
-        let extra = fake_bold as u32;
+        let extra = u32::from(fake_bold);
         let stride = w + extra;
         let mut coverage = vec![0u8; (stride * h) as usize];
         outlined.draw(|x, y, c| {

@@ -1,7 +1,7 @@
 //! Konsole `.colorscheme` files — what Yakuake uses too — translated into
 //! wl-dropdown's keys.
 //!
-//! They are KConfig INI, but read by hand: stock schemes put comments after
+//! They are `KConfig` INI, but read by hand: stock schemes put comments after
 //! group names (`[Color0] # Black`), which a strict INI reader rejects.
 
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ pub fn available_in(dirs: &[PathBuf]) -> Vec<String> {
     names
 }
 
-/// Konsole writes `Color=r,g,b` (optionally `,a`); KConfig also accepts
+/// Konsole writes `Color=r,g,b` (optionally `,a`); `KConfig` also accepts
 /// colour names and `#rrggbb`, so take those too.
 fn parse_scheme_colour(value: &str) -> Option<Rgb> {
     let parts: Vec<&str> = value.split(',').collect();

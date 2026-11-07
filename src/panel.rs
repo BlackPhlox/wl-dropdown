@@ -37,7 +37,7 @@ use crate::tabs::Tabs;
 const TERM_TOP: f64 = 6.0;
 const TERM_LEFT: f64 = 6.0;
 const TERM_RIGHT_GAP: f64 = 2.0;
-/// TextRender's own inset: cells start 2px in, and 4px are kept free.
+/// `TextRender`'s own inset: cells start 2px in, and 4px are kept free.
 const CELL_MARGIN: f64 = 2.0;
 const SCROLLBAR_WIDTH: f64 = 12.0;
 const THUMB_WIDTH: f64 = 6.0;
@@ -164,6 +164,10 @@ impl Anim {
     }
 
     /// Animates from wherever it is now, as a QML Behavior does.
+    #[allow(
+        clippy::float_cmp,
+        reason = "targets are constants, compared to skip restarts"
+    )]
     fn retarget(&mut self, to: f64, now: Instant, duration: Duration) {
         if to == self.to {
             return;
@@ -338,6 +342,9 @@ pub struct Panel {
 }
 
 impl Panel {
+    /// # Panics
+    ///
+    /// When `library` holds no usable font at all.
     pub fn new(
         values: Values,
         library: Arc<FontLibrary>,
@@ -556,6 +563,7 @@ impl Panel {
 
     // ── Settings ────────────────────────────────────────────────────
 
+    #[allow(clippy::float_cmp, reason = "any change to a configured value counts")]
     pub fn apply_settings(&mut self, values: Values, now: Instant) {
         let old = std::mem::replace(&mut self.values, values);
         let v = &self.values;
@@ -694,32 +702,25 @@ impl Panel {
                 self.sync_scrollbar(now);
                 self.dirty = true;
             }
-            Event::Title(t) => {
-                self.tabs.get_mut(index).unwrap().set_title(t);
-                self.dirty = true;
-            }
-            Event::ResetTitle => {
-                self.tabs.get_mut(index).unwrap().set_title(String::new());
-                self.dirty = true;
-            }
-            Event::PtyWrite(text) => self.tabs.get(index).unwrap().write(text.into_bytes()),
+            Event::Title(t) => self.set_title(index, t),
+            Event::ResetTitle => self.set_title(index, String::new()),
+            Event::PtyWrite(text) => self.reply(index, text.into_bytes()),
             Event::ColorRequest(i, format) => {
-                let s = self.tabs.get(index).unwrap();
+                let Some(s) = self.tabs.get(index) else {
+                    return;
+                };
                 let osc = *s.term().lock().colors();
                 let rgb = match i {
                     0..=255 => self.palette.indexed(i as u8, Some(&osc)),
-                    257 => osc[i]
-                        .map(palette::from_vt)
-                        .unwrap_or(self.palette.background),
-                    _ => osc[i]
-                        .map(palette::from_vt)
-                        .unwrap_or(self.palette.foreground),
+                    257 => osc[i].map_or(self.palette.background, palette::from_vt),
+                    _ => osc[i].map_or(self.palette.foreground, palette::from_vt),
                 };
-                s.write(format(palette::to_vt(rgb)).into_bytes());
+                self.reply(index, format(palette::to_vt(rgb)).into_bytes());
             }
             Event::TextAreaSizeRequest(format) => {
-                let s = self.tabs.get(index).unwrap();
-                let size = s.size();
+                let Some(size) = self.tabs.get(index).map(Session::size) else {
+                    return;
+                };
                 let (cw, ch) = self.cell_px();
                 let ws = alacritty_terminal::event::WindowSize {
                     num_lines: size.rows as u16,
@@ -727,14 +728,28 @@ impl Panel {
                     cell_width: cw,
                     cell_height: ch,
                 };
-                s.write(format(ws).into_bytes());
+                self.reply(index, format(ws).into_bytes());
             }
             Event::ClipboardStore(_, text) => self.effects.push(Effect::Copy(text)),
             // Reading the clipboard from a program (OSC 52 query) is refused:
-            // anything running in a tab could otherwise read it silently.
-            Event::ClipboardLoad(..) => {}
-            Event::Bell => {}
+            // anything running in a tab could otherwise read it silently. The
+            // bell has no visual counterpart here either.
+            Event::ClipboardLoad(..) | Event::Bell => {}
             Event::ChildExit(_) | Event::Exit => self.hangup(index, now),
+        }
+    }
+
+    /// Writes a response to a program's query back to it.
+    fn reply(&self, index: usize, bytes: Vec<u8>) {
+        if let Some(s) = self.tabs.get(index) {
+            s.write(bytes);
+        }
+    }
+
+    fn set_title(&mut self, index: usize, title: String) {
+        if let Some(s) = self.tabs.get_mut(index) {
+            s.set_title(title);
+            self.dirty = true;
         }
     }
 
@@ -935,6 +950,7 @@ impl Panel {
         (rows + history, rows, history - s.display_offset() as f64)
     }
 
+    #[allow(clippy::float_cmp, reason = "the target is one of two constants")]
     fn sync_scrollbar(&mut self, now: Instant) {
         let (total, view, _) = self.scroll_state();
         let target = if total - view > 0.0 {
@@ -1132,7 +1148,7 @@ impl Panel {
                     _ => CursorShape::NwseResize,
                 }
             }
-            Some(Grab::Select) | Some(Grab::Report(_)) => return CursorShape::Text,
+            Some(Grab::Select | Grab::Report(_)) => return CursorShape::Text,
             _ => match self.pointer {
                 Some((x, y)) => self.hit(x, y, now),
                 None => return CursorShape::Default,
@@ -1253,10 +1269,8 @@ impl Panel {
                 let (_, _, rect) = self.term_origin(now);
                 let dir = if y < rect.y {
                     -1
-                } else if y > rect.bottom() {
-                    1
                 } else {
-                    0
+                    i32::from(y > rect.bottom())
                 };
                 match (dir, self.autoscroll) {
                     (0, _) => self.autoscroll = None,
@@ -1300,23 +1314,8 @@ impl Panel {
             return;
         }
         let target = self.hit(x, y, now);
-        if self.menu.is_some() {
-            match target {
-                Target::MenuItem(_) if button == PointerButton::Left => {
-                    self.grab = Some(Grab::Click(target, button));
-                    return;
-                }
-                Target::MenuItem(_) | Target::Menu => return,
-                // A right click elsewhere on the terminal moves the menu
-                // there; any other press just closes it, and is used up
-                // doing so — it does not also act on what lies beneath.
-                Target::Terminal if button == PointerButton::Right => {}
-                _ => {
-                    self.menu = None;
-                    self.dirty = true;
-                    return;
-                }
-            }
+        if self.press_with_menu_open(target, button) {
+            return;
         }
         // Pressing anywhere but the editor finishes a rename, as the editor
         // losing focus does in the QML.
@@ -1328,52 +1327,8 @@ impl Panel {
             Target::Resize { width, height, .. } if button == PointerButton::Left => {
                 self.grab = Some(Grab::Resize { width, height });
             }
-            Target::Scrollbar if button == PointerButton::Left => {
-                let l = self.layout(now);
-                let thumb = l.thumb;
-                match thumb {
-                    Some(t) if y >= t.y && y <= t.bottom() => {
-                        let (total, view, pos) = self.scroll_state();
-                        let range = total - view;
-                        let ratio = if range > 0.0 { pos / range } else { 0.0 };
-                        self.grab = Some(Grab::Scroll {
-                            start_y: y,
-                            start_ratio: ratio,
-                        });
-                    }
-                    _ => {
-                        let ratio = (y - l.scrollbar.y) / l.scrollbar.h;
-                        self.scroll_to_ratio(ratio, now);
-                        self.grab = Some(Grab::Scroll {
-                            start_y: y,
-                            start_ratio: ratio.clamp(0.0, 1.0),
-                        });
-                    }
-                }
-            }
-            Target::Terminal => {
-                let tracking = self.tabs.active().mouse_tracking();
-                // A press goes to a program tracking the mouse, unless Shift
-                // is held: as in xterm, Shift still selects text for copying.
-                if tracking && !mods.shift {
-                    self.menu = None;
-                    let (col, row) = self.report_cell(x, y, now);
-                    self.tabs
-                        .active_mut()
-                        .mouse_button(button.report(), true, col, row, mods);
-                    self.grab = Some(Grab::Report(button.bit()));
-                } else if button == PointerButton::Left {
-                    let (p, side) = self.selection_point(x, y, now);
-                    let s = self.tabs.active_mut();
-                    s.clear_selection();
-                    s.start_selection(p, side);
-                    self.grab = Some(Grab::Select);
-                } else if button == PointerButton::Right {
-                    // The selection is kept, so the menu can copy it.
-                    self.open_menu(x, y, now);
-                }
-            }
-            Target::TabEditor(_) | Target::Panel => {}
+            Target::Scrollbar if button == PointerButton::Left => self.press_scrollbar(y, now),
+            Target::Terminal => self.press_terminal(button, x, y, mods, now),
             Target::Backdrop
             | Target::Tab(_)
             | Target::TabClose(_)
@@ -1382,6 +1337,78 @@ impl Panel {
                 self.grab = Some(Grab::Click(target, button));
             }
             _ => {}
+        }
+    }
+
+    /// A press while the menu is open. Returns true if it was used up.
+    fn press_with_menu_open(&mut self, target: Target, button: PointerButton) -> bool {
+        if self.menu.is_none() {
+            return false;
+        }
+        match target {
+            Target::MenuItem(_) if button == PointerButton::Left => {
+                self.grab = Some(Grab::Click(target, button));
+                true
+            }
+            Target::MenuItem(_) | Target::Menu => true,
+            // A right click elsewhere on the terminal moves the menu there;
+            // any other press just closes it, and is used up doing so — it
+            // does not also act on what lies beneath.
+            Target::Terminal if button == PointerButton::Right => false,
+            _ => {
+                self.menu = None;
+                self.dirty = true;
+                true
+            }
+        }
+    }
+
+    /// A press on the scrollbar: on the thumb it starts a drag, elsewhere it
+    /// jumps there first.
+    fn press_scrollbar(&mut self, y: f64, now: Instant) {
+        let l = self.layout(now);
+        let start_ratio = match l.thumb {
+            Some(t) if y >= t.y && y <= t.bottom() => {
+                let (total, view, pos) = self.scroll_state();
+                let range = total - view;
+                if range > 0.0 {
+                    pos / range
+                } else {
+                    0.0
+                }
+            }
+            _ => {
+                let ratio = (y - l.scrollbar.y) / l.scrollbar.h;
+                self.scroll_to_ratio(ratio, now);
+                ratio.clamp(0.0, 1.0)
+            }
+        };
+        self.grab = Some(Grab::Scroll {
+            start_y: y,
+            start_ratio,
+        });
+    }
+
+    fn press_terminal(&mut self, button: PointerButton, x: f64, y: f64, mods: Mods, now: Instant) {
+        let tracking = self.tabs.active().mouse_tracking();
+        // A press goes to a program tracking the mouse, unless Shift is held:
+        // as in xterm, Shift still selects text for copying.
+        if tracking && !mods.shift {
+            self.menu = None;
+            let (col, row) = self.report_cell(x, y, now);
+            self.tabs
+                .active_mut()
+                .mouse_button(button.report(), true, col, row, mods);
+            self.grab = Some(Grab::Report(button.bit()));
+        } else if button == PointerButton::Left {
+            let (p, side) = self.selection_point(x, y, now);
+            let s = self.tabs.active_mut();
+            s.clear_selection();
+            s.start_selection(p, side);
+            self.grab = Some(Grab::Select);
+        } else if button == PointerButton::Right {
+            // The selection is kept, so the menu can copy it.
+            self.open_menu(x, y, now);
         }
     }
 
@@ -1413,9 +1440,7 @@ impl Panel {
                 self.stop_autoscroll();
                 self.grab = None;
             }
-            Some(Grab::Resize { .. }) | Some(Grab::Scroll { .. })
-                if button == PointerButton::Left =>
-            {
+            Some(Grab::Resize { .. } | Grab::Scroll { .. }) if button == PointerButton::Left => {
                 self.grab = None;
             }
             Some(Grab::Click(target, b)) if b == button => {
@@ -1598,7 +1623,7 @@ impl Panel {
                 self.values.background,
                 self.values.background_opacity as f32,
             );
-            let r = self.values.corner_radius as f64;
+            let r = f64::from(self.values.corner_radius);
             // Top corners square and flush with the top of the usable area, so
             // it reads as dropping out of the bar rather than floating.
             let radii = Radii {
@@ -1610,11 +1635,73 @@ impl Panel {
             c.fill_round_rect(l.panel.x, l.panel.y, l.panel.w, l.panel.h, radii, bg);
             self.draw_terminal(c, &l);
             self.draw_scrollbar(c, &l, now);
-            self.draw_tabbar(c, &l, now);
+            self.draw_tabbar(c, &l);
             self.draw_menu(c, now);
         });
     }
 
+    /// What the active terminal shows, copied out so the lock is not held
+    /// while drawing.
+    fn visible(&self, cursor_on: bool) -> Visible {
+        let palette = &self.palette;
+        let default_bg = palette.background;
+        let s = self.tabs.active();
+        let term = s.term().lock();
+        let content = term.renderable_content();
+        let offset = content.display_offset as i32;
+        let osc = content.colors;
+        let mut cells = Vec::new();
+        for item in content.display_iter {
+            let cell = item.cell;
+            if cell
+                .flags
+                .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+            let mut fg = palette.resolve(cell.fg, Some(osc));
+            let mut bg = palette.resolve(cell.bg, Some(osc));
+            if cell.flags.contains(Flags::INVERSE) {
+                std::mem::swap(&mut fg, &mut bg);
+            }
+            let has_text = cell.c != ' ' && cell.c != '\0';
+            if !has_text && bg == default_bg && !cell.flags.intersects(Flags::ALL_UNDERLINES) {
+                continue;
+            }
+            let mut chars = vec![cell.c];
+            if let Some(zw) = cell.zerowidth() {
+                chars.extend_from_slice(zw);
+            }
+            cells.push(VisibleCell {
+                col: item.point.column.0,
+                row: (item.point.line.0 + offset) as usize,
+                chars,
+                fg,
+                bg,
+                flags: cell.flags,
+            });
+        }
+        let selection = content.selection.map(|r| {
+            (
+                (r.start.line.0 + offset, r.start.column.0),
+                (r.end.line.0 + offset, r.end.column.0),
+            )
+        });
+        let show_cursor = term.mode().contains(TermMode::SHOW_CURSOR) && offset == 0 && cursor_on;
+        let cursor =
+            show_cursor.then_some((content.cursor.point.line.0, content.cursor.point.column.0));
+        Visible {
+            cells,
+            selection,
+            cursor,
+            cols: term.columns(),
+        }
+    }
+
+    #[allow(
+        clippy::many_single_char_names,
+        reason = "c, l, m: canvas, layout, metrics"
+    )]
     fn draw_terminal(&mut self, c: &mut Canvas, l: &Layout) {
         let m = self.metrics;
         let px_em = pt_to_px(self.values.font_size);
@@ -1623,63 +1710,12 @@ impl Panel {
         let default_fg = palette.foreground;
         let cursor_on = self.cursor_on;
 
-        struct Cell {
-            col: usize,
-            row: usize,
-            chars: Vec<char>,
-            fg: Rgb,
-            bg: Rgb,
-            flags: Flags,
-        }
-        let (cells, selection, cursor, cols) = {
-            let s = self.tabs.active();
-            let term = s.term().lock();
-            let content = term.renderable_content();
-            let offset = content.display_offset as i32;
-            let osc = content.colors;
-            let mut cells = Vec::new();
-            for item in content.display_iter {
-                let cell = item.cell;
-                if cell
-                    .flags
-                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-                {
-                    continue;
-                }
-                let mut fg = palette.resolve(cell.fg, Some(osc));
-                let mut bg = palette.resolve(cell.bg, Some(osc));
-                if cell.flags.contains(Flags::INVERSE) {
-                    std::mem::swap(&mut fg, &mut bg);
-                }
-                let has_text = cell.c != ' ' && cell.c != '\0';
-                if !has_text && bg == default_bg && !cell.flags.intersects(Flags::ALL_UNDERLINES) {
-                    continue;
-                }
-                let mut chars = vec![cell.c];
-                if let Some(zw) = cell.zerowidth() {
-                    chars.extend_from_slice(zw);
-                }
-                cells.push(Cell {
-                    col: item.point.column.0,
-                    row: (item.point.line.0 + offset) as usize,
-                    chars,
-                    fg,
-                    bg,
-                    flags: cell.flags,
-                });
-            }
-            let selection = content.selection.map(|r| {
-                (
-                    (r.start.line.0 + offset, r.start.column.0),
-                    (r.end.line.0 + offset, r.end.column.0),
-                )
-            });
-            let show_cursor =
-                term.mode().contains(TermMode::SHOW_CURSOR) && offset == 0 && cursor_on;
-            let cursor =
-                show_cursor.then_some((content.cursor.point.line.0, content.cursor.point.column.0));
-            (cells, selection, cursor, term.columns())
-        };
+        let Visible {
+            cells,
+            selection,
+            cursor,
+            cols,
+        } = self.visible(cursor_on);
 
         let origin_x = l.term.x + CELL_MARGIN;
         let origin_y = l.term.y;
@@ -1749,7 +1785,7 @@ impl Panel {
                     }
                     c.fill_rect(
                         origin_x + from as f64 * m.width,
-                        origin_y + row as f64 * m.height,
+                        origin_y + f64::from(row) * m.height,
                         (to - from + 1) as f64 * m.width,
                         m.height,
                         SELECTION,
@@ -1759,7 +1795,7 @@ impl Panel {
             if let Some((row, col)) = cursor {
                 c.fill_rect(
                     origin_x + col as f64 * m.width,
-                    origin_y + row as f64 * m.height,
+                    origin_y + f64::from(row) * m.height,
                     m.width,
                     m.height,
                     Rgba::with_alpha(default_fg, CURSOR_ALPHA),
@@ -1797,7 +1833,45 @@ impl Panel {
         top + (height - m.height) / 2.0 + m.ascent
     }
 
-    fn draw_tabbar(&mut self, c: &mut Canvas, l: &Layout, now: Instant) {
+    /// The in-place editor that replaces a tab's label while renaming.
+    fn draw_tab_editor(&mut self, c: &mut Canvas, r: RectF, baseline: f64) {
+        let Some(rename) = &self.rename else { return };
+        let text = rename.editor.text();
+        let selection = rename.editor.selection();
+        let cursor = rename.editor.cursor();
+        let chars: Vec<char> = text.chars().collect();
+        let fonts = &mut self.fonts;
+        let mut prefix =
+            |n: usize| fonts.measure(&chars[..n].iter().collect::<String>(), TAB_LABEL_PX);
+        let text_x = r.x + 8.0;
+        if let Some((from, to)) = selection {
+            let x0 = text_x + prefix(from);
+            let x1 = text_x + prefix(to);
+            c.fill_rect(x0, r.y + 4.0, x1 - x0, r.h - 8.0, Rgba::white(0.3));
+        }
+        let cursor_x = text_x + prefix(cursor);
+        let edit_w = r.w - TAB_CLOSE_W - TAB_PAD;
+        let cursor_on = self.cursor_on;
+        c.clipped(text_x, r.y, edit_w + 1.0, r.h, |c| {
+            c.draw_text(
+                &mut self.fonts,
+                &text,
+                TAB_LABEL_PX,
+                text_x,
+                baseline,
+                Rgba::grey(0xff),
+            );
+            if cursor_on {
+                c.fill_rect(cursor_x, r.y + 4.0, 1.0, r.h - 8.0, Rgba::grey(0xff));
+            }
+        });
+    }
+
+    #[allow(
+        clippy::many_single_char_names,
+        reason = "c, l, f, p, r: canvas, layout, rectangles"
+    )]
+    fn draw_tabbar(&mut self, c: &mut Canvas, l: &Layout) {
         let hover = self.pointer;
         let is_hover = |r: &RectF| hover.is_some_and(|(x, y)| r.contains(x, y));
 
@@ -1827,7 +1901,6 @@ impl Panel {
         let active = self.tabs.active_index();
         let renaming = self.renaming();
         let labels = self.tabs.labels();
-        let cursor_on = self.cursor_on;
         let label_baseline = self.centred_baseline(
             l.tabs.first().map_or(0.0, |r| r.y),
             TAB_HEIGHT,
@@ -1835,7 +1908,6 @@ impl Panel {
         );
         let close_baseline = self.centred_baseline(l.plus.y, TAB_HEIGHT, 10.0);
         let plus_m = self.fonts.metrics(14.0);
-        let _ = now;
         c.clipped(f.x, f.y, f.w, f.h, |c| {
             for (i, r) in l.tabs.iter().enumerate() {
                 let highlighted = i == active || renaming == Some(i);
@@ -1849,32 +1921,7 @@ impl Panel {
                 );
                 let text_x = r.x + 8.0;
                 if renaming == Some(i) {
-                    let editor = &self.rename.as_ref().unwrap().editor;
-                    let text = editor.text();
-                    let chars: Vec<char> = text.chars().collect();
-                    let prefix = |n: usize, fonts: &mut Fonts| {
-                        fonts.measure(&chars[..n].iter().collect::<String>(), TAB_LABEL_PX)
-                    };
-                    if let Some((a, b)) = editor.selection() {
-                        let x0 = text_x + prefix(a, &mut self.fonts);
-                        let x1 = text_x + prefix(b, &mut self.fonts);
-                        c.fill_rect(x0, r.y + 4.0, x1 - x0, r.h - 8.0, Rgba::white(0.3));
-                    }
-                    let edit_w = r.w - TAB_CLOSE_W - TAB_PAD;
-                    let cursor_x = text_x + prefix(editor.cursor(), &mut self.fonts);
-                    c.clipped(text_x, r.y, edit_w + 1.0, r.h, |c| {
-                        c.draw_text(
-                            &mut self.fonts,
-                            &text,
-                            TAB_LABEL_PX,
-                            text_x,
-                            label_baseline,
-                            Rgba::grey(0xff),
-                        );
-                        if cursor_on {
-                            c.fill_rect(cursor_x, r.y + 4.0, 1.0, r.h - 8.0, Rgba::grey(0xff));
-                        }
-                    });
+                    self.draw_tab_editor(c, *r, label_baseline);
                 } else {
                     let color = if i == active {
                         Rgba::grey(0xff)
@@ -1976,6 +2023,25 @@ impl Panel {
     }
 }
 
+struct VisibleCell {
+    col: usize,
+    row: usize,
+    chars: Vec<char>,
+    fg: Rgb,
+    bg: Rgb,
+    flags: Flags,
+}
+
+/// Selection ends are (viewport row, column), rows possibly off screen.
+type SelectionSpan = ((i32, usize), (i32, usize));
+
+struct Visible {
+    cells: Vec<VisibleCell>,
+    selection: Option<SelectionSpan>,
+    cursor: Option<(i32, usize)>,
+    cols: usize,
+}
+
 /// A small cog, drawn rather than taken from a font so it looks the same
 /// whatever fonts are installed.
 fn draw_gear(c: &mut Canvas, cx: f64, cy: f64, color: Rgba) {
@@ -2015,9 +2081,9 @@ fn draw_gear(c: &mut Canvas, cx: f64, cy: f64, color: Rgba) {
 /// value is used as a pixel delta, as Qt's pixelDelta was.
 pub fn wheel_delta(value120: i32, discrete: i32, absolute: f64) -> f64 {
     if value120 != 0 {
-        -(value120 as f64)
+        -f64::from(value120)
     } else if discrete != 0 {
-        -(discrete as f64) * 120.0
+        -f64::from(discrete) * 120.0
     } else {
         -absolute
     }

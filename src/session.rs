@@ -1,4 +1,4 @@
-//! One terminal: an alacritty_terminal screen model, optionally driven by a
+//! One terminal: an `alacritty_terminal` screen model, optionally driven by a
 //! program on a pty.
 //!
 //! A session is created before it is started, because the size of the
@@ -517,6 +517,10 @@ impl Drop for Session {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "values in tests are exact by construction"
+)]
 mod tests {
     use super::*;
 
@@ -641,12 +645,10 @@ mod tests {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut exited = false;
         while std::time::Instant::now() < deadline {
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(Event::ChildExit(_)) => {
-                    exited = true;
-                    break;
-                }
-                _ => continue,
+            if let Ok(Event::ChildExit(_)) = rx.recv_timeout(std::time::Duration::from_millis(100))
+            {
+                exited = true;
+                break;
             }
         }
         assert!(exited, "child exit was reported");

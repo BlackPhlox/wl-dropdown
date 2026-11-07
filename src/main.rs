@@ -50,7 +50,7 @@ fn main() -> ExitCode {
     let result = if command == Some(Command::Settings) {
         run_settings()
     } else {
-        app::run(request)
+        app::run(&request)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

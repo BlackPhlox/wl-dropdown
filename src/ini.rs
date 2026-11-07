@@ -1,6 +1,6 @@
 //! The INI dialect the configuration files are written in.
 //!
-//! Compatible with what Qt's `QSettings` (IniFormat) wrote and read in the C++
+//! Compatible with what Qt's `QSettings` (`IniFormat`) wrote and read in the C++
 //! version, and with what Nix's `lib.generators.toINI` produces:
 //!
 //! - keys of interest live under `[General]`;
@@ -13,6 +13,7 @@
 //! Files are rewritten atomically (temporary file, then rename), so a reader
 //! sees either the old file or the new one, never a mixture.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -97,7 +98,7 @@ impl IniFile {
             }
             if let Some(rest) = line.strip_prefix('[') {
                 if let Some(end) = rest.find(']') {
-                    current = rest[..end].trim().to_owned();
+                    rest[..end].trim().clone_into(&mut current);
                 }
                 continue;
             }
@@ -107,16 +108,17 @@ impl IniFile {
             if key.is_empty() {
                 continue;
             }
-            let section = match sections.iter_mut().position(|s| s.name == current) {
-                Some(i) => &mut sections[i],
-                None => {
+            let index = sections
+                .iter()
+                .position(|s| s.name == current)
+                .unwrap_or_else(|| {
                     sections.push(Section {
                         name: current.clone(),
                         entries: Vec::new(),
                     });
-                    sections.last_mut().unwrap()
-                }
-            };
+                    sections.len() - 1
+                });
+            let section = &mut sections[index];
             match section.entries.iter_mut().find(|(k, _)| *k == key) {
                 Some(entry) => entry.1 = value, // later duplicates win
                 None => section.entries.push((key, value)),
@@ -194,15 +196,20 @@ impl IniFile {
             if !out.is_empty() {
                 out.push('\n');
             }
-            out.push_str(&format!("[{}]\n", section.name));
+            let _ = writeln!(out, "[{}]", section.name);
             for (k, v) in &section.entries {
-                out.push_str(&format!("{k}={v}\n"));
+                let _ = writeln!(out, "{k}={v}");
             }
         }
         out
     }
 
     /// Writes the file atomically, creating its directory if needed.
+    ///
+    /// # Errors
+    ///
+    /// When the file has no path, or the directory, temporary file or rename
+    /// cannot be written.
     pub fn save(&self) -> io::Result<()> {
         let Some(path) = &self.path else {
             return Err(io::Error::new(

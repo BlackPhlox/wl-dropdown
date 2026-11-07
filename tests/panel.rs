@@ -1,6 +1,9 @@
 //! Behaviour of the dropdown's UI, driven through the same entry points the
 //! Wayland frontend uses, with headless terminals.
 
+// Positions and fractions here are computed exactly, from whole numbers.
+#![allow(clippy::float_cmp)]
+
 use std::time::Duration;
 
 use alacritty_terminal::event::Event;
@@ -359,7 +362,7 @@ fn osc52_copies() {
 #[test]
 fn wheel_scrolls_history_but_not_the_alternate_screen() {
     let mut st = stage();
-    let lines: String = (0..100).map(|i| format!("{i}\r\n")).collect();
+    let lines = (0..100).fold(String::new(), |s, i| s + &i.to_string() + "\r\n");
     st.feed(lines.as_bytes());
     let now = st.now;
     let t = centre(st.panel.layout(now).term);
@@ -384,7 +387,7 @@ fn wheel_scrolls_history_but_not_the_alternate_screen() {
 #[test]
 fn scrollbar_click_jumps_and_drag_follows() {
     let mut st = stage();
-    let lines: String = (0..300).map(|i| format!("{i}\r\n")).collect();
+    let lines = (0..300).fold(String::new(), |s, i| s + &i.to_string() + "\r\n");
     st.feed(lines.as_bytes());
     let now = st.now;
     let l = st.panel.layout(now);

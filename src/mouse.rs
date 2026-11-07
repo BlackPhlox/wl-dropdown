@@ -9,6 +9,10 @@ use crate::keys::Mods;
 
 /// Which reports the program asked for, and in what encoding.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent terminal mode flags"
+)]
 pub struct MouseMode {
     /// Any tracking at all (1000, 1002 or 1003).
     pub enabled: bool,
@@ -99,9 +103,9 @@ impl MouseReporter {
             return None;
         }
         let code = if b < 4 {
-            b as u32 - 1
+            u32::from(b) - 1
         } else {
-            b as u32 - 4 + 0x40
+            u32::from(b) - 4 + 0x40
         };
         Some(output(
             code,
@@ -121,7 +125,7 @@ fn utf8_coord(out: &mut String, v: u32) {
 }
 
 fn output(code: u32, pressed: bool, mods: Mods, col: i32, row: i32, mode: MouseMode) -> String {
-    let modifiers = (mods.vterm_bits() as u32) << 2;
+    let modifiers = u32::from(mods.vterm_bits()) << 2;
     let (col, row) = (col.max(0) as u32, row.max(0) as u32);
     if mode.sgr {
         return format!(

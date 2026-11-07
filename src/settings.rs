@@ -493,6 +493,10 @@ impl Settings {
     // Each clamps or normalises, and only marks the key dirty if the value
     // actually moved.
 
+    #[allow(
+        clippy::float_cmp,
+        reason = "any change, however small, is a change to save"
+    )]
     fn set_f64(
         &mut self,
         key: &'static str,
@@ -616,6 +620,10 @@ impl Drop for Settings {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::float_cmp,
+    reason = "values in tests are exact by construction"
+)]
 mod tests {
     use super::*;
     use std::fs;
@@ -792,7 +800,7 @@ mod tests {
         assert_eq!(f.writes.load(Ordering::SeqCst), 0);
 
         let deadline = s.flush_deadline().unwrap();
-        s.flush_if_due(deadline - Duration::from_millis(1));
+        s.flush_if_due(deadline.checked_sub(Duration::from_millis(1)).unwrap());
         assert!(s.has_pending_writes());
         s.flush_if_due(deadline);
         assert!(!s.has_pending_writes());

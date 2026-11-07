@@ -52,3 +52,17 @@ lto = "thin"
 opt-level = 2
 [profile.test.package."*"]
 opt-level = 2
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Geometry here converts constantly between pixel positions (f64) and grid
+# cells or buffer sizes (usize/u32/i32), all bounded by the size of a screen.
+# Flagging every such cast would bury the warnings that matter.
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+# Nearly every accessor would qualify; the attribute would be noise.
+must_use_candidate = "allow"
+# Pairs like mode/mods, col/cell and x0/x1 are the domain's own names.
+similar_names = "allow"

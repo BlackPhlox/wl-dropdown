@@ -78,6 +78,10 @@ fn parse_hex(hex: &str) -> Option<Rgb> {
     Some(Rgb::new(scaled(r)?, scaled(g)?, scaled(b)?))
 }
 
+#[allow(
+    clippy::unreadable_literal,
+    reason = "colours read as #rrggbb, not grouped digits"
+)]
 const NAMED: &[(&str, u32)] = &[
     ("aliceblue", 0xf0f8ff),
     ("antiquewhite", 0xfaebd7),

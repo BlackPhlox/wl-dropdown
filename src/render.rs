@@ -101,6 +101,9 @@ impl Radii {
     }
 }
 
+/// Control-point distance for a cubic approximation of a quarter circle.
+const K: f32 = 0.552_284_8;
+
 pub struct Canvas<'a> {
     pub pixmap: &'a mut Pixmap,
     pub scale: f64,
@@ -110,6 +113,10 @@ pub struct Canvas<'a> {
     clip: Option<(f64, f64, f64, f64)>,
 }
 
+#[allow(
+    clippy::many_single_char_names,
+    reason = "x, y, w, h and r, g, b are the conventional geometry and colour names"
+)]
 impl<'a> Canvas<'a> {
     pub fn new(pixmap: &'a mut Pixmap, scale: f64) -> Self {
         Self {
@@ -265,8 +272,6 @@ impl<'a> Canvas<'a> {
             r(radii.bottom_left),
         );
         let (x, y, w, h) = (x as f32, y as f32, w as f32, h as f32);
-        // Cubic approximation of a quarter circle.
-        const K: f32 = 0.552_284_8;
         let mut pb = PathBuilder::new();
         pb.move_to(x + tl, y);
         pb.line_to(x + w - tr, y);
@@ -378,15 +383,16 @@ impl<'a> Canvas<'a> {
                 if cov == 0 {
                     continue;
                 }
-                let a = cov as f32 / 255.0 * alpha;
+                let a = f32::from(cov) / 255.0 * alpha;
                 let i = ((py * width + px) * 4) as usize;
                 // Source-over onto premultiplied RGBA.
                 let inv = 1.0 - a;
-                let blend = |src: u8, dst: u8| (src as f32 * a + dst as f32 * inv).round() as u8;
+                let blend =
+                    |src: u8, dst: u8| (f32::from(src) * a + f32::from(dst) * inv).round() as u8;
                 data[i] = blend(color.r, data[i]);
                 data[i + 1] = blend(color.g, data[i + 1]);
                 data[i + 2] = blend(color.b, data[i + 2]);
-                data[i + 3] = ((a + data[i + 3] as f32 / 255.0 * inv) * 255.0).round() as u8;
+                data[i + 3] = ((a + f32::from(data[i + 3]) / 255.0 * inv) * 255.0).round() as u8;
             }
         }
         true

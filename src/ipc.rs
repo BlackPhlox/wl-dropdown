@@ -35,6 +35,10 @@ pub fn send_to(path: &Path, request: &[u8]) -> bool {
 
 /// Binds the control socket. Only called after failing to reach a live
 /// instance, so a socket file already there is stale and safe to replace.
+///
+/// # Errors
+///
+/// When the socket cannot be bound.
 pub fn listen(path: &Path) -> io::Result<UnixListener> {
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
@@ -46,6 +50,10 @@ pub fn listen(path: &Path) -> io::Result<UnixListener> {
 /// line is not guaranteed to arrive in a single read, so this reads until the
 /// client half-closes. Clients write and close immediately, so the timeout
 /// only matters for a misbehaving peer.
+///
+/// # Errors
+///
+/// When the connection fails or times out.
 pub fn read_request(mut stream: UnixStream) -> io::Result<Vec<u8>> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(1)))?;

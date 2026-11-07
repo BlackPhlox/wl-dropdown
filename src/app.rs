@@ -129,7 +129,7 @@ struct App {
     surface: Option<Mapped>,
     /// Integer scale from the compositor, used without fractional scaling.
     int_scale: i32,
-    /// Preferred scale ×120, from wp_fractional_scale_v1.
+    /// Preferred scale ×120, from `wp_fractional_scale_v1`.
     fractional_scale: Option<u32>,
 
     settings: Settings,
@@ -203,7 +203,7 @@ fn bind_optional<I: Proxy + 'static, U: Dispatch2<I, App> + Send + Sync + 'stati
 
 /// Runs the terminal: the process that owns the window. `request` is what
 /// the invocation that started it asked for.
-pub fn run(request: Vec<u8>) -> Result<(), String> {
+pub fn run(request: &[u8]) -> Result<(), String> {
     let conn =
         Connection::connect_to_env().map_err(|e| format!("cannot connect to Wayland: {e}"))?;
     let (globals, queue) =
@@ -231,7 +231,7 @@ pub fn run(request: Vec<u8>) -> Result<(), String> {
     });
     event_loop
         .handle()
-        .insert_source(rx, |event, _, app: &mut App| {
+        .insert_source(rx, |event, (), app: &mut App| {
             if let channel::Event::Msg((id, e)) = event {
                 let now = Instant::now();
                 app.panel.handle_session_event(id, e, now);
@@ -291,7 +291,7 @@ pub fn run(request: Vec<u8>) -> Result<(), String> {
     };
 
     // Whatever started us: show, toggle (which shows) or exec.
-    app.handle_request(&request);
+    app.handle_request(request);
 
     while !app.exit {
         let now = Instant::now();
@@ -366,8 +366,8 @@ impl App {
 
     fn scale(&self) -> f64 {
         match (self.fractional_scale, &self.viewporter) {
-            (Some(s), Some(_)) => s as f64 / 120.0,
-            _ => self.int_scale as f64,
+            (Some(s), Some(_)) => f64::from(s) / 120.0,
+            _ => f64::from(self.int_scale),
         }
     }
 
@@ -502,8 +502,8 @@ impl App {
         if lw == 0 || lh == 0 {
             return;
         }
-        let bw = (lw as f64 * scale).round() as u32;
-        let bh = (lh as f64 * scale).round() as u32;
+        let bw = (f64::from(lw) * scale).round() as u32;
+        let bh = (f64::from(lh) * scale).round() as u32;
         let stride = bw as i32 * 4;
         let pool = match &mut self.pool {
             Some(p) => p,
@@ -537,7 +537,7 @@ impl App {
                     let mut c = Canvas::with_origin(
                         &mut pixmap,
                         scale,
-                        (-(x0 as f64) / scale, -(y0 as f64) / scale),
+                        (-f64::from(x0) / scale, -f64::from(y0) / scale),
                     );
                     self.panel.render(&mut c, now);
                 }
@@ -596,7 +596,7 @@ impl App {
             TEXT_MIMES
                 .iter()
                 .find(|t| m.iter().any(|x| x == *t))
-                .map(|t| t.to_string())
+                .map(std::string::ToString::to_string)
         }) else {
             return;
         };
@@ -616,7 +616,7 @@ impl App {
         let (tx, rx) = channel::channel::<String>();
         let _ = self
             .loop_handle
-            .insert_source(rx, |event, _, app: &mut App| {
+            .insert_source(rx, |event, (), app: &mut App| {
                 if let channel::Event::Msg(text) = event {
                     app.panel.paste(&text);
                 }
@@ -632,7 +632,7 @@ impl App {
     }
 }
 
-/// `wl-dropdown settings` as a separate process: LayerShell surfaces and an
+/// `wl-dropdown settings` as a separate process: `LayerShell` surfaces and an
 /// ordinary decorated window do not belong in one client, and the dropdown
 /// would cover the window anyway.
 fn spawn_settings() {
@@ -725,7 +725,7 @@ impl LayerShellHandler for App {
         m.configured = true;
         m.frame_pending = false;
         self.panel
-            .set_surface_size(m.size.0 as f64, m.size.1 as f64, now);
+            .set_surface_size(f64::from(m.size.0), f64::from(m.size.1), now);
         self.panel.mark_dirty();
     }
 }

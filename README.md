@@ -250,6 +250,10 @@ scripts/e2e-screenshot.sh                    # against a real compositor
   sway, run the real binary with a fixed program in it, capture the output
   with grim at scales 1 and 1.25, and compare with `tests/e2e/*.png`.
 
+Lints: `clippy::pedantic` is enabled for the whole crate (see `[lints]` in
+`Cargo.toml`) and CI runs clippy with `-D warnings`. The few lints allowed
+crate-wide, and every local `#[allow]`, carry a reason.
+
 To look at the scenes, or compare any two screenshots (for instance two grim
 captures before and after a change):
 

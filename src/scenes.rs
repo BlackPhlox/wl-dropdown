@@ -5,6 +5,7 @@
 //! test fonts. Nothing depends on the machine, the clock or a compositor, so
 //! the same scene renders to the same pixels everywhere.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -25,6 +26,10 @@ use crate::snapshot::Image;
 pub const TEST_FONT_FAMILY: &str = "DejaVu Sans Mono";
 
 /// The bundled fonts, so rendering does not depend on what is installed.
+///
+/// # Panics
+///
+/// When `tests/fonts` is missing from the source tree.
 pub fn test_fonts() -> Arc<FontLibrary> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fonts");
     let files = [
@@ -34,7 +39,7 @@ pub fn test_fonts() -> Arc<FontLibrary> {
         "DejaVuSansMono-BoldOblique.ttf",
     ]
     .map(|f| dir.join(f));
-    let refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
+    let refs: Vec<&std::path::Path> = files.iter().map(std::path::PathBuf::as_path).collect();
     Arc::new(FontLibrary::from_files(&refs).expect("test fonts are missing from tests/fonts"))
 }
 
@@ -61,6 +66,9 @@ impl Stage {
         Self::with_fonts(values, width, height, scale, test_fonts())
     }
 
+    /// # Panics
+    ///
+    /// When `fonts` holds no usable font.
     pub fn with_fonts(
         values: Values,
         width: u32,
@@ -77,7 +85,7 @@ impl Stage {
             Arc::new(move |id, e| events.lock().unwrap().push((id, e)))
         };
         let mut panel = Panel::new(values, fonts, Spawner::Headless, sink, now);
-        panel.set_surface_size(width as f64, height as f64, now);
+        panel.set_surface_size(f64::from(width), f64::from(height), now);
         panel.show(now);
         let mut stage = Self {
             panel,
@@ -128,9 +136,12 @@ impl Stage {
         self.panel.pointer_release(button, x, y, Mods::NONE, now);
     }
 
+    /// # Panics
+    ///
+    /// When the stage has a zero size.
     pub fn render(&mut self) -> Image {
-        let w = (self.width as f64 * self.scale).round() as u32;
-        let h = (self.height as f64 * self.scale).round() as u32;
+        let w = (f64::from(self.width) * self.scale).round() as u32;
+        let h = (f64::from(self.height) * self.scale).round() as u32;
         let mut pixmap = Pixmap::new(w, h).expect("non-empty scene");
         let now = self.now;
         let mut canvas = Canvas::new(&mut pixmap, self.scale);
@@ -222,7 +233,10 @@ fn ls_output() -> String {
         ("-rw-r--r--", "4.8M", "\x1b[35mpreview.png\x1b[0m"),
     ];
     for (perm, size, name) in rows {
-        s += &format!("{perm} 1 junky junky \x1b[33m{size}\x1b[0m Nov  7 08:54 {name}\r\n");
+        let _ = write!(
+            s,
+            "{perm} 1 junky junky \x1b[33m{size}\x1b[0m Nov  7 08:54 {name}\r\n"
+        );
     }
     s += PROMPT;
     s
@@ -247,7 +261,8 @@ fn colours_scene() -> Stage {
     let mut s = prompt("colours");
     for base in [30, 90] {
         for i in 0..8 {
-            s += &format!(
+            let _ = write!(
+                s,
                 "\x1b[{}m {:>2} \x1b[0m",
                 base + i + 10,
                 if base == 30 { i } else { i + 8 }
@@ -255,23 +270,23 @@ fn colours_scene() -> Stage {
         }
         s += "  ";
         for i in 0..8 {
-            s += &format!("\x1b[{}m ab \x1b[0m", base + i);
+            let _ = write!(s, "\x1b[{}m ab \x1b[0m", base + i);
         }
         s += "\r\n";
     }
     for row in 0..6 {
         for i in 0..36 {
-            s += &format!("\x1b[48;5;{}m ", 16 + row * 36 + i);
+            let _ = write!(s, "\x1b[48;5;{}m ", 16 + row * 36 + i);
         }
         s += "\x1b[0m\r\n";
     }
     for i in 232..256 {
-        s += &format!("\x1b[48;5;{i}m  ");
+        let _ = write!(s, "\x1b[48;5;{i}m  ");
     }
     s += "\x1b[0m\r\n";
     for i in 0..64 {
         let r = i * 4;
-        s += &format!("\x1b[48;2;{};{};{}m ", r, 255 - r, 128);
+        let _ = write!(s, "\x1b[48;2;{};{};{}m ", r, 255 - r, 128);
     }
     s += "\x1b[0m\r\n";
     s += "\x1b[1mbold\x1b[0m \x1b[3mitalic\x1b[0m \x1b[1;3mbold italic\x1b[0m \x1b[4munderline\x1b[0m \x1b[9mstrike\x1b[0m \x1b[7minverse\x1b[0m \x1b[8mhidden\x1b[0m normal\r\n";
@@ -328,7 +343,7 @@ fn scrollback_scene() -> Stage {
     );
     let mut s = prompt("seq 1 200");
     for i in 1..=200 {
-        s += &format!("{i}\r\n");
+        let _ = write!(s, "{i}\r\n");
     }
     s += PROMPT;
     st.feed(s.as_bytes());
@@ -401,7 +416,8 @@ fn alt_screen_scene() -> Stage {
         ),
     ];
     for p in procs {
-        s += &format!(
+        let _ = write!(
+            s,
             " {} {:<9} {:>3} {:>3} {:>5} {:>5} {:>5} {} {:>4} {:>4} {:>8}  \x1b[1m{}\x1b[0m\r\n",
             p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.9, p.10, p.11
         );
@@ -470,15 +486,15 @@ fn resized_scene() -> Stage {
     st.panel
         .pointer_press(PointerButton::Left, x, y, Mods::NONE, now);
     st.panel.pointer_motion(
-        st.width as f64 * 0.85,
-        st.height as f64 * 0.5,
+        f64::from(st.width) * 0.85,
+        f64::from(st.height) * 0.5,
         Mods::NONE,
         now,
     );
     st.panel.pointer_release(
         PointerButton::Left,
-        st.width as f64 * 0.85,
-        st.height as f64 * 0.5,
+        f64::from(st.width) * 0.85,
+        f64::from(st.height) * 0.5,
         Mods::NONE,
         now,
     );
