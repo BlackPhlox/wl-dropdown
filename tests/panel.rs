@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use alacritty_terminal::event::Event;
 use wl_dropdown::keys::{Key, Mods};
-use wl_dropdown::panel::{CursorShape, Effect, PointerButton, Target};
+use wl_dropdown::panel::{CursorShape, Effect, MenuItem, PointerButton, Target};
 use wl_dropdown::scenes::{test_values, Stage};
 use wl_dropdown::settings::Values;
 use wl_dropdown::tabs::TabSession;
@@ -542,4 +542,156 @@ fn the_toggle_animation_moves_the_panel() {
     let now = st.now;
     st.panel.toggle(now);
     assert!(st.panel.animating(now));
+}
+
+fn select_hello(st: &mut Stage) {
+    let now = st.now;
+    let l = st.panel.layout(now);
+    let m = st.panel.metrics();
+    let y = l.term.y + m.height * 0.5;
+    st.panel
+        .pointer_press(PointerButton::Left, l.term.x + 2.1, y, Mods::NONE, now);
+    st.panel.pointer_release(
+        PointerButton::Left,
+        l.term.x + 2.0 + m.width * 4.9,
+        y,
+        Mods::NONE,
+        now,
+    );
+}
+
+fn right_click_terminal(st: &mut Stage, mods: Mods) -> (f64, f64) {
+    let now = st.now;
+    let t = centre(st.panel.layout(now).term);
+    st.panel
+        .pointer_press(PointerButton::Right, t.0, t.1, mods, now);
+    st.panel
+        .pointer_release(PointerButton::Right, t.0, t.1, mods, now);
+    t
+}
+
+fn click_menu_item(st: &mut Stage, item: MenuItem) {
+    let now = st.now;
+    let menu = st.panel.menu_rect(now).expect("menu is open");
+    let index = MenuItem::ALL.iter().position(|i| *i == item).unwrap();
+    let (x, y) = (menu.x + 20.0, menu.y + 4.0 + 24.0 * index as f64 + 12.0);
+    assert_eq!(st.panel.hit(x, y, now), Target::MenuItem(item));
+    st.click(PointerButton::Left, x, y);
+}
+
+#[test]
+fn right_click_menu_copies_the_selection() {
+    let mut st = stage();
+    select_hello(&mut st);
+    right_click_terminal(&mut st, Mods::NONE);
+    assert!(st.panel.menu_open());
+    assert_eq!(
+        st.panel.tabs().active().selected_text(),
+        "hello",
+        "right click keeps the selection"
+    );
+    click_menu_item(&mut st, MenuItem::Copy);
+    assert!(!st.panel.menu_open());
+    assert_eq!(st.panel.take_effects(), vec![Effect::Copy("hello".into())]);
+}
+
+#[test]
+fn right_click_menu_pastes() {
+    let mut st = stage();
+    right_click_terminal(&mut st, Mods::NONE);
+    click_menu_item(&mut st, MenuItem::Paste);
+    assert_eq!(st.panel.take_effects(), vec![Effect::Paste]);
+    assert!(!st.panel.menu_open());
+}
+
+#[test]
+fn copy_is_disabled_without_a_selection() {
+    let mut st = stage();
+    right_click_terminal(&mut st, Mods::NONE);
+    click_menu_item(&mut st, MenuItem::Copy);
+    assert!(st.panel.take_effects().is_empty());
+    assert!(
+        st.panel.menu_open(),
+        "a disabled entry leaves the menu open"
+    );
+}
+
+#[test]
+fn the_menu_closes_without_side_effects() {
+    let mut st = stage();
+    right_click_terminal(&mut st, Mods::NONE);
+    st.key(Key::Escape, Mods::NONE, "");
+    assert!(!st.panel.menu_open());
+
+    // A click outside closes it, and is used up doing so: the dropdown stays.
+    right_click_terminal(&mut st, Mods::NONE);
+    st.click(PointerButton::Left, 5.0, 590.0);
+    assert!(!st.panel.menu_open());
+    assert!(st.panel.controller().opened());
+
+    // Typing closes it and still types.
+    right_click_terminal(&mut st, Mods::NONE);
+    st.key(Key::Char('t'), Mods::ctrl_shift(), "T");
+    assert!(!st.panel.menu_open());
+    assert_eq!(st.panel.tabs().len(), 2);
+
+    // So does hiding.
+    right_click_terminal(&mut st, Mods::NONE);
+    let now = st.now;
+    st.panel.hide(now);
+    assert!(!st.panel.menu_open());
+}
+
+#[test]
+fn a_second_right_click_moves_the_menu() {
+    let mut st = stage();
+    right_click_terminal(&mut st, Mods::NONE);
+    let now = st.now;
+    let first = st.panel.menu_rect(now).unwrap();
+    let t = st.panel.layout(now).term;
+    st.panel.pointer_press(
+        PointerButton::Right,
+        t.x + 10.0,
+        t.y + 10.0,
+        Mods::NONE,
+        now,
+    );
+    let second = st.panel.menu_rect(now).unwrap();
+    assert_ne!(first, second);
+}
+
+#[test]
+fn the_menu_stays_inside_the_panel() {
+    let mut st = stage();
+    let now = st.now;
+    let l = st.panel.layout(now);
+    let (x, y) = (l.term.right() - 8.0, l.term.bottom() - 2.0);
+    st.panel
+        .pointer_press(PointerButton::Right, x, y, Mods::NONE, now);
+    let m = st.panel.menu_rect(now).unwrap();
+    assert!(
+        m.right() <= l.panel.right() && m.bottom() <= l.panel.bottom(),
+        "{m:?} in {:?}",
+        l.panel
+    );
+}
+
+#[test]
+fn a_program_tracking_the_mouse_gets_right_clicks_unless_shift_is_held() {
+    let mut st = stage();
+    st.feed(b"\x1b[?1000h\x1b[?1006h");
+    right_click_terminal(&mut st, Mods::NONE);
+    assert!(!st.panel.menu_open());
+    right_click_terminal(&mut st, Mods::SHIFT);
+    assert!(st.panel.menu_open());
+}
+
+#[test]
+fn right_click_on_a_tab_still_renames() {
+    let mut st = stage();
+    let now = st.now;
+    let l = st.panel.layout(now);
+    st.click(PointerButton::Right, l.tabs[0].x + 8.0, centre(l.tabs[0]).1);
+    assert_eq!(st.panel.renaming(), Some(0));
+    assert!(!st.panel.menu_open());
 }

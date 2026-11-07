@@ -16,6 +16,7 @@ sway, river, niri…) and a key bound to `wl-dropdown toggle`.
 - Interactive scrollbar with drag and click-to-jump
 - Resizable by dragging its side and bottom edges, until restart
 - Mouse clicks go to programs that support them (htop, vim, mc…); Shift+drag still selects
+- Right-click menu with Copy and Paste
 - Terminal emulation by [alacritty_terminal](https://crates.io/crates/alacritty_terminal);
   key and mouse encoding checked byte-for-byte against libvterm's tables
 - Drops down flush beneath a bar without hardcoding the bar's height
@@ -203,8 +204,8 @@ post_hook   = "wl-dropdown reload"
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+Shift+C | Copy |
-| Ctrl+Shift+V, Shift+Insert | Paste |
+| Ctrl+Shift+C, or right-click → Copy | Copy |
+| Ctrl+Shift+V, Shift+Insert, or right-click → Paste | Paste |
 | Ctrl+Shift+T / N | New tab |
 | Ctrl+Shift+W | Close tab |
 | Ctrl+Shift+E | Rename tab (or right-click it) |
@@ -212,6 +213,12 @@ post_hook   = "wl-dropdown reload"
 | Shift+Right, Ctrl+Tab | Next tab ¹ |
 | Ctrl+Shift+Left | Move tab left ¹ |
 | Ctrl+Shift+Right | Move tab right ¹ |
+
+Right-clicking the terminal opens a menu with Copy and Paste; Copy is
+greyed out without a selection, and the selection is kept so the menu can
+copy it. In a program that tracks the mouse (htop, vim with `mouse=a`),
+right-clicks go to the program; hold Shift to get the menu, as with
+selecting. Right-clicking a tab still renames it.
 
 ¹ Remappable with `previousTabKeys`, `nextTabKeys`, `moveTabLeftKeys` and
 `moveTabRightKeys`: comma-separated key combinations in Qt's spelling
@@ -232,7 +239,8 @@ scripts/e2e-screenshot.sh                    # against a real compositor
   tab bookkeeping, the line editor, and real pty sessions.
 - **Behaviour tests** (`tests/panel.rs`) drive the panel through the same
   entry points as the Wayland frontend: clicks on tabs, the gear and the
-  backdrop, edge resizing, the scrollbar, renaming, shortcuts, the wheel,
+  backdrop, the right-click menu, edge resizing, the scrollbar, renaming,
+  shortcuts, the wheel,
   mouse reporting, clipboard effects and program exit.
 - **Screenshot tests** (`tests/screenshots.rs`) render deterministic scenes
   (`src/scenes.rs`) with bundled fonts and compare them pixel by pixel with
@@ -258,6 +266,7 @@ The differences:
 - Names: the binary, config directory, socket and layer namespace are
   `wl-dropdown`.
 - Pasting uses bracketed paste when the program asks for it.
+- Right-clicking the terminal opens a Copy/Paste menu.
 - Clicks on the panel's own padding no longer dismiss it; only clicks outside
   the panel do.
 - Programs cannot read the clipboard through OSC 52 (writing to it works).

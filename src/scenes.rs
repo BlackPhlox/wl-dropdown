@@ -198,6 +198,10 @@ pub fn all() -> Vec<Scene> {
             name: "resized",
             build: resized_scene,
         },
+        Scene {
+            name: "context_menu",
+            build: context_menu_scene,
+        },
     ]
 }
 
@@ -479,5 +483,20 @@ fn resized_scene() -> Stage {
         now,
     );
     st.advance(Duration::from_millis(200));
+    st
+}
+
+fn context_menu_scene() -> Stage {
+    let mut st = selection_scene();
+    let now = st.now;
+    let l = st.panel.layout(now);
+    let m = st.panel.metrics();
+    let (x, y) = (l.term.x + 2.0 + m.width * 24.0, l.term.y + m.height * 1.5);
+    st.panel
+        .pointer_press(PointerButton::Right, x, y, Mods::NONE, now);
+    st.panel
+        .pointer_release(PointerButton::Right, x, y, Mods::NONE, now);
+    // Hover the first entry, so the highlight is in the picture.
+    st.panel.pointer_motion(x + 20.0, y + 14.0, Mods::NONE, now);
     st
 }

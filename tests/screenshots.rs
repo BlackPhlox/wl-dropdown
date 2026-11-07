@@ -51,6 +51,7 @@ screenshot_tests!(
     half_open,
     fractional_scale,
     resized,
+    context_menu,
 );
 
 #[test]

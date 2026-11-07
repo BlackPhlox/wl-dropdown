@@ -59,6 +59,11 @@ const RESIZE_RIGHT: f64 = 3.0;
 const RESIZE_BOTTOM: f64 = 5.0;
 const RESIZE_CORNER: f64 = 10.0;
 
+const MENU_WIDTH: f64 = 190.0;
+const MENU_ITEM_H: f64 = 24.0;
+const MENU_PAD: f64 = 4.0;
+const MENU_TEXT_PX: f64 = 12.0;
+
 const SELECTION: Rgba = Rgba::new(0x88, 0xc0, 0xd0, 0.4);
 const CURSOR_ALPHA: f32 = 180.0 / 255.0;
 const BLINK: Duration = Duration::from_millis(500);
@@ -185,11 +190,40 @@ pub enum Target {
     TabEditor(usize),
     Plus,
     Gear,
+    /// An entry of the open context menu.
+    MenuItem(MenuItem),
+    /// The context menu's own padding.
+    Menu,
     Resize {
         width: bool,
         height: bool,
         left: bool,
     },
+}
+
+/// The terminal's right-click menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuItem {
+    Copy,
+    Paste,
+}
+
+impl MenuItem {
+    pub const ALL: [MenuItem; 2] = [MenuItem::Copy, MenuItem::Paste];
+
+    fn label(self) -> &'static str {
+        match self {
+            MenuItem::Copy => "Copy",
+            MenuItem::Paste => "Paste",
+        }
+    }
+
+    fn shortcut(self) -> &'static str {
+        match self {
+            MenuItem::Copy => "Ctrl+Shift+C",
+            MenuItem::Paste => "Ctrl+Shift+V",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -287,6 +321,9 @@ pub struct Panel {
     scrollbar_width: Anim,
     tab_scroll: f64,
     rename: Option<Rename>,
+    /// The open context menu's top-left, relative to the panel, so it moves
+    /// with the panel if that slides.
+    menu: Option<(f64, f64)>,
 
     pointer: Option<(f64, f64)>,
     grab: Option<Grab>,
@@ -336,6 +373,7 @@ impl Panel {
             scrollbar_width: Anim::at(0.0, Ease::Linear),
             tab_scroll: 0.0,
             rename: None,
+            menu: None,
             pointer: None,
             grab: None,
             autoscroll: None,
@@ -434,6 +472,7 @@ impl Panel {
     }
 
     pub fn hide(&mut self, now: Instant) {
+        self.menu = None;
         self.controller.request_hide(now, self.values.animation_ms);
         self.sync_slide(now);
     }
@@ -446,6 +485,7 @@ impl Panel {
     /// The compositor took the surface away.
     pub fn surface_lost(&mut self, now: Instant) {
         self.controller.surface_lost();
+        self.menu = None;
         self.slide = Anim::at(0.0, Ease::OutCubic);
         self.grab = None;
         self.sync_slide(now);
@@ -619,6 +659,7 @@ impl Panel {
 
     fn after_active_changed(&mut self, now: Instant) {
         self.stop_autoscroll();
+        self.menu = None;
         if matches!(self.grab, Some(Grab::Select | Grab::Report(_))) {
             self.grab = None;
         }
@@ -941,7 +982,72 @@ impl Panel {
 
     // ── Hit testing ─────────────────────────────────────────────────
 
+    /// Whether the right-click menu is open.
+    pub fn menu_open(&self) -> bool {
+        self.menu.is_some()
+    }
+
+    /// The open menu's rectangle, in surface coordinates.
+    pub fn menu_rect(&mut self, now: Instant) -> Option<RectF> {
+        let (mx, my) = self.menu?;
+        let p = self.layout(now).panel;
+        let h = MENU_PAD * 2.0 + MENU_ITEM_H * MenuItem::ALL.len() as f64;
+        Some(RectF::new(p.x + mx, p.y + my, MENU_WIDTH, h))
+    }
+
+    fn menu_item_rect(menu: RectF, index: usize) -> RectF {
+        RectF::new(
+            menu.x + MENU_PAD,
+            menu.y + MENU_PAD + index as f64 * MENU_ITEM_H,
+            menu.w - 2.0 * MENU_PAD,
+            MENU_ITEM_H,
+        )
+    }
+
+    fn menu_item_enabled(&self, item: MenuItem) -> bool {
+        match item {
+            MenuItem::Copy => !self.tabs.active().selected_text().is_empty(),
+            MenuItem::Paste => true,
+        }
+    }
+
+    /// Opens the menu at a point, kept inside the panel so it is never
+    /// clipped by the surface or drawn over the backdrop.
+    fn open_menu(&mut self, x: f64, y: f64, now: Instant) {
+        let p = self.layout(now).panel;
+        let h = MENU_PAD * 2.0 + MENU_ITEM_H * MenuItem::ALL.len() as f64;
+        let mx = (x - p.x).min(p.w - MENU_WIDTH - 4.0).max(4.0);
+        let my = (y - p.y).min(p.h - h - 4.0).max(4.0);
+        self.menu = Some((mx, my));
+        self.dirty = true;
+    }
+
+    fn activate_menu_item(&mut self, item: MenuItem) {
+        if !self.menu_item_enabled(item) {
+            return; // a disabled entry ignores the click and the menu stays
+        }
+        self.menu = None;
+        match item {
+            MenuItem::Copy => {
+                let text = self.tabs.active().selected_text();
+                self.effects.push(Effect::Copy(text));
+            }
+            MenuItem::Paste => self.effects.push(Effect::Paste),
+        }
+        self.dirty = true;
+    }
+
     pub fn hit(&mut self, x: f64, y: f64, now: Instant) -> Target {
+        // The menu sits above everything.
+        if let Some(menu) = self.menu_rect(now) {
+            if menu.contains(x, y) {
+                return MenuItem::ALL
+                    .iter()
+                    .enumerate()
+                    .find(|(i, _)| Self::menu_item_rect(menu, *i).contains(x, y))
+                    .map_or(Target::Menu, |(_, item)| Target::MenuItem(*item));
+            }
+        }
         let l = self.layout(now);
         if !l.panel.contains(x, y) {
             return Target::Backdrop;
@@ -1194,6 +1300,24 @@ impl Panel {
             return;
         }
         let target = self.hit(x, y, now);
+        if self.menu.is_some() {
+            match target {
+                Target::MenuItem(_) if button == PointerButton::Left => {
+                    self.grab = Some(Grab::Click(target, button));
+                    return;
+                }
+                Target::MenuItem(_) | Target::Menu => return,
+                // A right click elsewhere on the terminal moves the menu
+                // there; any other press just closes it, and is used up
+                // doing so — it does not also act on what lies beneath.
+                Target::Terminal if button == PointerButton::Right => {}
+                _ => {
+                    self.menu = None;
+                    self.dirty = true;
+                    return;
+                }
+            }
+        }
         // Pressing anywhere but the editor finishes a rename, as the editor
         // losing focus does in the QML.
         if !matches!(target, Target::TabEditor(_)) {
@@ -1232,6 +1356,7 @@ impl Panel {
                 // A press goes to a program tracking the mouse, unless Shift
                 // is held: as in xterm, Shift still selects text for copying.
                 if tracking && !mods.shift {
+                    self.menu = None;
                     let (col, row) = self.report_cell(x, y, now);
                     self.tabs
                         .active_mut()
@@ -1243,6 +1368,9 @@ impl Panel {
                     s.clear_selection();
                     s.start_selection(p, side);
                     self.grab = Some(Grab::Select);
+                } else if button == PointerButton::Right {
+                    // The selection is kept, so the menu can copy it.
+                    self.open_menu(x, y, now);
                 }
             }
             Target::TabEditor(_) | Target::Panel => {}
@@ -1310,6 +1438,7 @@ impl Panel {
                 self.new_tab(now);
             }
             (Target::Gear, PointerButton::Left) => self.open_settings(now),
+            (Target::MenuItem(item), PointerButton::Left) => self.activate_menu_item(item),
             _ => {}
         }
     }
@@ -1318,6 +1447,10 @@ impl Panel {
     /// user. `pixels` is set instead for touchpads.
     pub fn wheel(&mut self, x: f64, y: f64, delta: f64, mods: Mods, now: Instant) {
         if delta == 0.0 {
+            return;
+        }
+        if self.menu.take().is_some() {
+            self.dirty = true;
             return;
         }
         let target = self.hit(x, y, now);
@@ -1375,6 +1508,10 @@ impl Panel {
 
     pub fn key(&mut self, press: &KeyPress, now: Instant) {
         self.dirty = true;
+        // Any key closes the menu; Escape does nothing else.
+        if self.menu.take().is_some() && press.key == keys::Key::Escape {
+            return;
+        }
         if let Some(r) = &mut self.rename {
             match r.editor.key(press) {
                 EditResult::Accept => self.commit_rename(),
@@ -1474,6 +1611,7 @@ impl Panel {
             self.draw_terminal(c, &l);
             self.draw_scrollbar(c, &l, now);
             self.draw_tabbar(c, &l, now);
+            self.draw_menu(c, now);
         });
     }
 
@@ -1777,6 +1915,64 @@ impl Panel {
                 Rgba::grey(0xaa),
             );
         });
+    }
+}
+
+impl Panel {
+    fn draw_menu(&mut self, c: &mut Canvas, now: Instant) {
+        let Some(menu) = self.menu_rect(now) else {
+            return;
+        };
+        let hover = self.pointer;
+        // A hairline border: the outer rectangle in the border colour, the
+        // inner one in the fill.
+        c.fill_round_rect(
+            menu.x,
+            menu.y,
+            menu.w,
+            menu.h,
+            Radii::all(6.0),
+            Rgba::white(0.14),
+        );
+        c.fill_round_rect(
+            menu.x + 1.0,
+            menu.y + 1.0,
+            menu.w - 2.0,
+            menu.h - 2.0,
+            Radii::all(5.0),
+            Rgba::new(0x1e, 0x1e, 0x22, 0.98),
+        );
+        for (i, item) in MenuItem::ALL.into_iter().enumerate() {
+            let r = Self::menu_item_rect(menu, i);
+            let enabled = self.menu_item_enabled(item);
+            if enabled && hover.is_some_and(|(x, y)| r.contains(x, y)) {
+                c.fill_round_rect(r.x, r.y, r.w, r.h, Radii::all(4.0), Rgba::white(0.12));
+            }
+            let baseline = self.centred_baseline(r.y, r.h, MENU_TEXT_PX);
+            let (text, hint) = if enabled {
+                (Rgba::grey(0xee), Rgba::grey(0x88))
+            } else {
+                (Rgba::grey(0x66), Rgba::grey(0x55))
+            };
+            c.draw_text(
+                &mut self.fonts,
+                item.label(),
+                MENU_TEXT_PX,
+                r.x + 8.0,
+                baseline,
+                text,
+            );
+            let hint_px = MENU_TEXT_PX - 1.0;
+            let w = self.fonts.measure(item.shortcut(), hint_px);
+            c.draw_text(
+                &mut self.fonts,
+                item.shortcut(),
+                hint_px,
+                r.right() - 8.0 - w,
+                baseline,
+                hint,
+            );
+        }
     }
 }
 
