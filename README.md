@@ -3,7 +3,8 @@
 # wl-dropdown
 
 **A drop-down terminal for Wayland, in the spirit of Yakuake.**<br>
-Bind one key to summon it over your desktop and dismiss it again. Your terminal is only one key away.
+Bind one key to summon it over your desktop and dismiss it again. Your terminal is only one key away.<br>
+Based from [dropterm](https://github.com/ajunca/noctalia-dropdown-terminal)
 
 [![CI](https://github.com/BlackPhlox/wl-dropdown/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackPhlox/wl-dropdown/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
