@@ -1,0 +1,68 @@
+[package]
+name = "wl-dropdown"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+description = "Yakuake-style dropdown terminal for Wayland, on wlr-layer-shell"
+license = "MIT"
+repository = "https://github.com/BlackPhlox/wl-dropdown"
+readme = "README.md"
+default-run = "wl-dropdown"
+
+[features]
+default = ["settings-ui"]
+# The settings window (`wl-dropdown settings`). Without it the binary is the
+# terminal alone and is configured by editing the INI files.
+settings-ui = ["dep:eframe"]
+# `wl-dropdown-snapshot`, the developer tool that renders the screenshot-test
+# scenes and diffs PNGs. Only meaningful inside the source tree.
+snapshot-tool = []
+
+[[bin]]
+name = "wl-dropdown"
+path = "src/main.rs"
+
+[[bin]]
+name = "wl-dropdown-snapshot"
+path = "src/bin/wl-dropdown-snapshot.rs"
+required-features = ["snapshot-tool"]
+
+[dependencies]
+alacritty_terminal = "0.26"
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop", "xkbcommon"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+ab_glyph = "0.2"
+fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "memmap", "fontconfig"] }
+png = "0.18"
+libc = "0.2"
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
+eframe = { version = "0.37", optional = true, default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+
+# Rasterising and diffing screenshots in debug builds is slow enough to
+# matter, and none of it needs to be stepped through.
+[profile.dev.package."*"]
+opt-level = 2
+[profile.test.package."*"]
+opt-level = 2
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Geometry here converts constantly between pixel positions (f64) and grid
+# cells or buffer sizes (usize/u32/i32), all bounded by the size of a screen.
+# Flagging every such cast would bury the warnings that matter.
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+# Nearly every accessor would qualify; the attribute would be noise.
+must_use_candidate = "allow"
+# Pairs like mode/mods, col/cell and x0/x1 are the domain's own names.
+similar_names = "allow"
