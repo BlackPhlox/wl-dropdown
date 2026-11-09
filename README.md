@@ -1,16 +1,25 @@
+<div align="center">
+
 # wl-dropdown
 
-**A drop-down terminal for Wayland, in the spirit of Yakuake.**
+**A drop-down terminal for Wayland, in the spirit of Yakuake.**<br>
 Bind one key to summon it over your desktop and dismiss it again. Tabs and running programs survive every round trip.
 
-![screenshot](tests/e2e/e2e_scale1.png)
+[![CI](https://github.com/BlackPhlox/wl-dropdown/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackPhlox/wl-dropdown/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)
+![Wayland](https://img.shields.io/badge/wayland-wlr--layer--shell-5c7cfa.svg)
+
+<img src="docs/screenshot.png" alt="wl-dropdown with its right-click Copy/Paste menu" width="720">
+
+</div>
 
 wl-dropdown is a single Rust binary that draws its own terminal on a
 `wlr-layer-shell` surface — the mechanism bars and docks use — so it depends
 on no desktop shell. It needs a compositor supporting layer-shell (Hyprland,
 sway, river, niri…) and a key bound to `wl-dropdown toggle`.
 
-## Features
+## ✨ Features
 
 - Tabbed terminal sessions, persisting across open/close, with renamable tabs
 - Interactive scrollbar with drag and click-to-jump
@@ -25,7 +34,7 @@ sway, river, niri…) and a key bound to `wl-dropdown toggle`.
 - Konsole/Yakuake colour schemes, and a theme layer for desktop palette engines
 - Screenshot tests, at the renderer level and end-to-end against a real compositor
 
-## How it works
+## 🔧 How it works
 
 | piece | what it does |
 |---|---|
@@ -53,7 +62,7 @@ Two details of the surface are load-bearing:
 The consequence is that the dropdown is **modal**: while it is open, clicks
 outside it dismiss it, and typing goes to the terminal.
 
-## Installation
+## 📦 Installation
 
 **Build dependencies**: Rust 1.95+, pkg-config, libxkbcommon. At run time the
 settings window also loads libwayland-client and libEGL/libGL.
@@ -92,7 +101,7 @@ programs.wl-dropdown = {
 
 A `PKGBUILD` for a `-git` package is in the repository root.
 
-## Usage
+## 🚀 Usage
 
 `wl-dropdown` is a single binary. The first invocation starts it; later
 invocations are remote controls over a per-user socket in `$XDG_RUNTIME_DIR`,
@@ -122,7 +131,7 @@ Bind the toggle in your compositor. Hyprland:
 bind = , F12, exec, wl-dropdown toggle
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 Settings live in `$XDG_CONFIG_HOME/wl-dropdown/wl-dropdown.conf` (INI, keys
 under `[General]`). The format is compatible with dropterm's, so an existing
@@ -200,7 +209,7 @@ output_path = "~/.config/wl-dropdown/theme.conf"
 post_hook   = "wl-dropdown reload"
 ```
 
-## Keyboard shortcuts
+## ⌨️ Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -226,7 +235,7 @@ selecting. Right-clicking a tab still renames it.
 key back to the program in the terminal. Switching wraps around; moving stops
 at either end.
 
-## Testing
+## 🧪 Testing
 
 ```bash
 cargo test                                   # everything below except e2e

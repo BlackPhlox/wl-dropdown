@@ -1,5 +1,5 @@
 pkgname=wl-dropdown-git
-pkgver=2.0.0
+pkgver=0.1.0
 pkgrel=1
 pkgdesc="Yakuake-style dropdown terminal for wlr-layer-shell compositors"
 arch=('x86_64' 'aarch64')

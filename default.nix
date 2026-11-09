@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "wl-dropdown";
-  version = "2.0.0";
+  version = "0.1.0";
 
   src = lib.cleanSource ./.;
   cargoLock.lockFile = ./Cargo.lock;
