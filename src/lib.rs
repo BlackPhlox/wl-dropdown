@@ -9,6 +9,7 @@ pub mod cli;
 pub mod color;
 pub mod colorscheme;
 pub mod controller;
+pub mod dnd;
 pub mod fonts;
 pub mod ini;
 pub mod ipc;

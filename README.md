@@ -26,6 +26,7 @@ sway, river, niri…) and a key bound to `wl-dropdown toggle`.
 - Resizable by dragging its side and bottom edges, until restart
 - Mouse clicks go to programs that support them (htop, vim, mc…); Shift+drag still selects
 - Right-click menu with Copy and Paste
+- Drop files onto the terminal to paste their shell-quoted paths (text drops paste as text)
 - Terminal emulation by [alacritty_terminal](https://crates.io/crates/alacritty_terminal);
   key and mouse encoding checked byte-for-byte against libvterm's tables
 - Drops down flush beneath a bar without hardcoding the bar's height

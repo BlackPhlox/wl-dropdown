@@ -30,7 +30,7 @@ use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, 
 use smithay_client_toolkit::data_device_manager::data_source::{
     CopyPasteSource, DataSourceHandler,
 };
-use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
+use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, ReadPipe, WritePipe};
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel::{self, Channel};
@@ -72,6 +72,7 @@ use wayland_protocols::wp::viewporter::client::{
 };
 
 use wl_dropdown::cli::{self, Command, Request};
+use wl_dropdown::dnd;
 use wl_dropdown::fonts::FontLibrary;
 use wl_dropdown::ipc;
 use wl_dropdown::keys::{Key, KeyPress, Mods};
@@ -86,6 +87,7 @@ type SessionMsg = (SessionId, TermEvent);
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
+const URI_LIST: &str = "text/uri-list";
 const TEXT_MIMES: [&str; 4] = [
     "text/plain;charset=utf-8",
     "UTF8_STRING",
@@ -600,24 +602,30 @@ impl App {
         }) else {
             return;
         };
-        let pipe = match offer.receive(mime) {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("cannot read the clipboard: {e}");
-                return;
-            }
-        };
+        match offer.receive(mime) {
+            Ok(pipe) => self.paste_from(&pipe, false),
+            Err(e) => log::warn!("cannot read the clipboard: {e}"),
+        }
+    }
+
+    /// Reads `pipe` to its end and pastes it; as a `text/uri-list` when
+    /// `files` is set.
+    fn paste_from(&mut self, pipe: &ReadPipe, files: bool) {
         // Read on a thread: the source may be slow, and must never stall the
         // terminal.
         let Ok(fd) = pipe.as_fd().try_clone_to_owned() else {
             return;
         };
-        drop(pipe);
         let (tx, rx) = channel::channel::<String>();
         let _ = self
             .loop_handle
-            .insert_source(rx, |event, (), app: &mut App| {
+            .insert_source(rx, move |event, (), app: &mut App| {
                 if let channel::Event::Msg(text) = event {
+                    let text = if files {
+                        dnd::uri_list_to_paste(&text)
+                    } else {
+                        text
+                    };
                     app.panel.paste(&text);
                 }
             });
@@ -953,11 +961,50 @@ impl DataDeviceHandler for App {
         _: f64,
         _: &wl_surface::WlSurface,
     ) {
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let mime = drop_mime(&offer);
+        offer.accept_mime_type(offer.serial, mime.clone());
+        if mime.is_some() {
+            offer.set_actions(DndAction::Copy, DndAction::Copy);
+        }
     }
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64) {}
     fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
-    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let Some(mime) = drop_mime(&offer) else {
+            return;
+        };
+        let files = mime == URI_LIST;
+        match offer.receive(mime) {
+            Ok(pipe) => self.paste_from(&pipe, files),
+            Err(e) => log::warn!("cannot read the drop: {e}"),
+        }
+        offer.finish();
+    }
+}
+
+/// What to ask a drag for: file URIs first, else plain text.
+fn drop_mime(offer: &DragOffer) -> Option<String> {
+    offer.with_mime_types(|m| {
+        std::iter::once(&URI_LIST)
+            .chain(&TEXT_MIMES)
+            .find(|t| m.iter().any(|x| x == *t))
+            .map(ToString::to_string)
+    })
 }
 
 impl DataOfferHandler for App {
