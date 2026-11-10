@@ -1755,7 +1755,11 @@ impl Panel {
                 let color = Rgba::opaque(cell.fg);
                 if !cell.flags.contains(Flags::HIDDEN) {
                     for &ch in &cell.chars {
-                        if ch != ' ' && ch != '\0' {
+                        if ch == ' ' || ch == '\0' {
+                            continue;
+                        }
+                        let cell_rect = (x, baseline - m.ascent, m.width * span, m.height);
+                        if !c.draw_box_char(ch, cell_rect, m.underline_thickness, color) {
                             c.draw_char(&mut self.fonts, ch, style, px_em, x, baseline, color);
                         }
                     }

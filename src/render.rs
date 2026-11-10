@@ -398,6 +398,39 @@ impl<'a> Canvas<'a> {
         true
     }
 
+    /// Draws a light or heavy box-drawing character as rectangles filling the
+    /// cell at logical `(x, y, w, h)`, so lines join across cells whatever the
+    /// font's glyphs do. Returns false for characters it does not cover.
+    // shortcut: light/heavy/rounded only; mixed weights, dashes and doubles
+    // fall back to the font's glyph. Extend `box_segments` when needed.
+    #[allow(clippy::many_single_char_names, reason = "cell geometry: x, y, w, h")]
+    pub fn draw_box_char(
+        &mut self,
+        c: char,
+        (x, y, w, h): (f64, f64, f64, f64),
+        thin: f64,
+        color: Rgba,
+    ) -> bool {
+        let Some((left, up, right, down, heavy)) = box_segments(c) else {
+            return false;
+        };
+        let t = if heavy { thin * 2.0 } else { thin };
+        let (cx, cy) = (x + (w - t) / 2.0, y + (h - t) / 2.0);
+        if left {
+            self.fill_rect_snapped(x, cy, cx + t - x, t, color);
+        }
+        if right {
+            self.fill_rect_snapped(cx, cy, x + w - cx, t, color);
+        }
+        if up {
+            self.fill_rect_snapped(cx, y, t, cy + t - y, color);
+        }
+        if down {
+            self.fill_rect_snapped(cx, cy, t, y + h - cy, color);
+        }
+        true
+    }
+
     /// Draws a string with ordinary advances; returns its logical width.
     pub fn draw_text(
         &mut self,
@@ -426,4 +459,35 @@ pub fn rgba_to_argb8888(src: &[u8], dst: &mut [u8]) {
     for (s, d) in src.iter().zip(dst.iter_mut()) {
         *d = [s[2], s[1], s[0], s[3]];
     }
+}
+
+/// (left, up, right, down, heavy) arms of a box-drawing character.
+#[allow(clippy::many_single_char_names, reason = "l, u, r, d: the four arms")]
+fn box_segments(c: char) -> Option<(bool, bool, bool, bool, bool)> {
+    let (l, u, r, d, heavy) = match c {
+        '─' => (1, 0, 1, 0, 0),
+        '━' => (1, 0, 1, 0, 1),
+        '│' => (0, 1, 0, 1, 0),
+        '┃' => (0, 1, 0, 1, 1),
+        '┌' | '╭' => (0, 0, 1, 1, 0),
+        '┏' => (0, 0, 1, 1, 1),
+        '┐' | '╮' => (1, 0, 0, 1, 0),
+        '┓' => (1, 0, 0, 1, 1),
+        '└' | '╰' => (0, 1, 1, 0, 0),
+        '┗' => (0, 1, 1, 0, 1),
+        '┘' | '╯' => (1, 1, 0, 0, 0),
+        '┛' => (1, 1, 0, 0, 1),
+        '├' => (0, 1, 1, 1, 0),
+        '┣' => (0, 1, 1, 1, 1),
+        '┤' => (1, 1, 0, 1, 0),
+        '┫' => (1, 1, 0, 1, 1),
+        '┬' => (1, 0, 1, 1, 0),
+        '┳' => (1, 0, 1, 1, 1),
+        '┴' => (1, 1, 1, 0, 0),
+        '┻' => (1, 1, 1, 0, 1),
+        '┼' => (1, 1, 1, 1, 0),
+        '╋' => (1, 1, 1, 1, 1),
+        _ => return None,
+    };
+    Some((l == 1, u == 1, r == 1, d == 1, heavy == 1))
 }
